@@ -4,6 +4,9 @@ A web app for Android phones. Glenn opens a link in Chrome, stands where the cli
 Mule on the ground, puts the client's ad on it, and snaps a photo to text or email to the client.
 No app store and no install. It can be added to the home screen like an app.
 
+**Live:** https://jurglefoogle.github.io/mule-ar/ (GitHub Pages from https://github.com/jurglefoogle/mule-ar,
+branch `main`; a push redeploys it in about a minute).
+
 ## What it does
 
 - **Place:** point at the ground, then tap. The sign is true size (7.6 ft wide, 6.6 ft tall) and can't be scaled.
