@@ -76,6 +76,11 @@ function shadowLight(color, intensity, extent, mapSize) {
 const sun = shadowLight(0xfff4e5, 2.2, 3.5, 2048);   // follows the phone's light estimate when there is one
 const sky = shadowLight(0xffffff, 0.25, 2.0, 1024);  // straight down: soft contact shadow under the base
 const sunDir = new THREE.Vector3(-0.35, 1, 0.55).normalize();
+const ambient = new THREE.LightProbe();               // the phone's ambient estimate, copied here so it can be scaled
+ambient.intensity = 0;
+scene.add(ambient);
+let brightness = 1;                                   // the "Sign brightness" slider; scales every light
+try { brightness = Number(localStorage.getItem('mule.brightness')) || 1; } catch { /* private mode */ }
 
 const xrLight = new XREstimatedLight(renderer);      // must exist before the session starts
 let estimating = false;
@@ -84,6 +89,7 @@ xrLight.addEventListener('estimationstart', () => {
   log('light estimation started');
   scene.add(xrLight);
   xrLight.directionalLight.visible = false;           // its direction and colour drive `sun` instead
+  xrLight.lightProbe.visible = false;                 // copied into `ambient` instead
   hemi.visible = false;
   if (xrLight.environment) scene.environment = xrLight.environment;
 });
@@ -91,6 +97,7 @@ xrLight.addEventListener('estimationend', () => {
   estimating = false;
   scene.remove(xrLight);
   hemi.visible = true;
+  ambient.intensity = 0;
   scene.environment = roomEnv;
 });
 
@@ -117,7 +124,7 @@ new GLTFLoader().load('mule.glb', (gltf) => {
       const key = o.name.slice(3);
       adMeshes[key] = o;
       if (o.userData.viewport_w_in) VIEWPORT[key.split('_')[0]] = [o.userData.viewport_w_in, o.userData.viewport_h_in];
-      o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.38 });
+      o.material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.65 });   // matte printed stock
     }
   });
   sign.add(gltf.scene);
@@ -281,6 +288,15 @@ $('exit').addEventListener('click', () => session?.end());
 $('move').addEventListener('click', () => { placing = true; });
 $('face').addEventListener('click', faceCamera);
 $('adsBtn').addEventListener('click', () => $('adsheet').classList.toggle('hidden'));
+$('bright').value = brightness;
+$('bright').addEventListener('input', (e) => {
+  brightness = Number(e.target.value);
+  try { localStorage.setItem('mule.brightness', String(brightness)); } catch { /* private mode */ }
+});
+$('brightReset').addEventListener('click', () => {
+  $('bright').value = 1;
+  $('bright').dispatchEvent(new Event('input'));
+});
 $('strip').addEventListener('click', () => {
   stripOn = !stripOn;
   $('strip').textContent = `Info: ${stripOn ? 'on' : 'off'}`;
@@ -333,13 +349,28 @@ function updateHits(frame) {
        : hit ? 'Tap the screen to place the sign' : 'Point at the ground and move the phone slowly');
 }
 
-function updateLights() {
+let lastLightLog = 0;
+function updateLights(t) {
   if (estimating) {
     const d = xrLight.directionalLight;
-    sunDir.copy(d.position).normalize();
+    if (d.position.lengthSq() > 0) sunDir.copy(d.position).normalize();
     sun.color.copy(d.color);
-    sun.intensity = d.intensity;
+    sun.intensity = d.intensity * brightness;
+    ambient.sh.copy(xrLight.lightProbe.sh);
+    ambient.intensity = brightness;
+    if (DEBUG && t - lastLightLog > 3000) {
+      lastLightLog = t;
+      const c = xrLight.lightProbe.sh.coefficients[0];
+      log('light: sun', d.intensity.toFixed(2), `#${d.color.getHexString()}`, 'dir', sunDir.toArray().map((v) => v.toFixed(2)),
+        'ambient', [c.x, c.y, c.z].map((v) => v.toFixed(2)), 'env', !!xrLight.environment);
+    }
+  } else {
+    sun.color.set(0xfff4e5);
+    sun.intensity = 2.2 * brightness;
+    hemi.intensity = 1.1 * brightness;
   }
+  sky.intensity = 0.25 * brightness;
+  scene.environmentIntensity = brightness;
   sun.position.copy(sign.position).addScaledVector(sunDir, 8);
   sun.target.position.copy(sign.position);
   sky.position.copy(sign.position).add(_v.set(0, 8, 0));
@@ -349,7 +380,7 @@ function updateLights() {
 renderer.setAnimationLoop((t, frame) => {
   if (frame && hitSource) updateHits(frame);
   else controls.update();
-  updateLights();
+  updateLights(t);
   renderer.render(scene, camera);
   if (snapPending && frame) {
     snapPending = false;

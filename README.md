@@ -12,13 +12,14 @@ branch `main`; a push redeploys it in about a minute).
 - **Place:** point at the ground, then tap. The sign is true size (7.6 ft wide, 6.6 ft tall) and can't be scaled.
 - **Turn:** drag a finger sideways across the screen. **Face me** turns the front towards the phone.
   **Move** picks the sign up again.
-- **Ads:** the samples, or the client's own artwork from the phone (**Client top ad…**, **Client bottom ad…**), on
+- **Ads (Adjust):** the samples, or the client's own artwork from the phone (**Client top ad…**, **Client bottom ad…**), on
   both faces or just one. Artwork is cropped to fill the viewport: 84 × 42 in on top and 84 × 13 in on the bottom.
 - **Snap:** the white button takes a photo of the camera view with the sign. **Info: on** adds a strip at the bottom
   reading "THE MULE by ASININE SIGNS · asininesigns.com · 918.230.0056". Then **Share** opens Android's share
   sheet (Messages, Gmail, WhatsApp…) and **Save** keeps it on the phone.
 - **Light:** if the phone reports the scene's light, the sign takes on its brightness, colour and sun direction,
-  and its shadow falls the right way. Otherwise a soft overhead light is used.
+  and its shadow falls the right way. Otherwise a soft overhead light is used. If the sign still looks too bright
+  or too dark next to the real scene, **Adjust → Sign brightness** scales all its lighting (the phone remembers it).
 - **Without AR** (a desktop, an iPhone, an older Android phone): a 3D preview where ads can still be tried.
 
 ## What the phone needs
@@ -76,4 +77,6 @@ H:\Blender\blender.exe -b --factory-startup --python ar_preview/export_glb.py
   an ordinary screenshot instead (Power + Volume down), which captures the sign too. If a photo comes out upside
   down, the camera image's row order differs on that phone; this is a one-line fix in `capture()`.
 - People and objects in front of the sign don't hide it (no occlusion). A native ARCore app could add that.
+- **Focus is up to Chrome.** WebXR gives a web page no focus control, and ARCore runs the camera at fixed focus for
+  tracking, so close objects (under about 1 m) can look soft. A native ARCore app can switch on autofocus.
 - The bottom viewport uses the 13 in from the prints; the website says 15 in. This is still open with Glenn.
