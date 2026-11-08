@@ -45,6 +45,10 @@ folder `/`).
    ```
 3. On the phone, open Chrome at `http://localhost:8765`. Chrome counts localhost as secure, so AR works.
 
+**Debug log:** add `?debug` to the address (e.g. `…/mule-ar/?debug`) to show a small green log panel: whether AR is
+supported, which session features the phone granted, and the camera picture size or the error when a snap fails.
+Errors also pop up as a message at the bottom, with or without `?debug`.
+
 ## Files
 
 | File | What it is |
