@@ -232,6 +232,12 @@ async function checkSupport() {
   }
 }
 checkSupport();
+if (DEBUG && /^#strip/.test(location.hash)) {          // ?debug#strip-848x2000: test the photo strip on a blank image
+  const [w, h] = (location.hash.match(/(\d+)x(\d+)/) || [0, 848, 2000]).slice(1).map(Number);
+  const img = new ImageData(w, h);
+  img.data.fill(150);
+  setTimeout(() => finishPhoto(img), 500);
+}
 
 $('startAR').addEventListener('click', async () => {
   try {
@@ -293,6 +299,7 @@ $('bright').addEventListener('input', (e) => {
   brightness = Number(e.target.value);
   try { localStorage.setItem('mule.brightness', String(brightness)); } catch { /* private mode */ }
 });
+$('sunMode').addEventListener('change', (e) => setSunMode(e.target.value));
 $('brightReset').addEventListener('click', () => {
   $('bright').value = 1;
   $('bright').dispatchEvent(new Event('input'));
@@ -349,26 +356,56 @@ function updateHits(frame) {
        : hit ? 'Tap the screen to place the sign' : 'Point at the ground and move the phone slowly');
 }
 
+// Sun direction: 'auto' takes the phone's estimate; 'behind' and 'overhead' are fixed in the world when picked.
+let sunMode = 'auto';
+const fixedSun = new THREE.Vector3(0, 1, 0);
+const _est = new THREE.Vector3(), _shDir = new THREE.Vector3();
+const lum = (c) => 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
+
+function setSunMode(mode) {
+  sunMode = mode;
+  if (mode === 'behind') {                            // low sun at the photographer's back
+    const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+    _v.setFromMatrixPosition(cam.matrixWorld).sub(sign.position);
+    _v.y = 0;
+    fixedSun.copy(_v.normalize()).setY(0.45).normalize();
+  } else if (mode === 'overhead') {
+    fixedSun.set(0.15, 1, 0.1).normalize();
+  }
+}
+
 let lastLightLog = 0;
 function updateLights(t) {
   if (estimating) {
     const d = xrLight.directionalLight;
-    if (d.position.lengthSq() > 0) sunDir.copy(d.position).normalize();
+    if (d.position.lengthSq() > 0) {
+      // Chrome on some phones reports the direction the light travels instead of the direction to it (the sign
+      // came out lit from behind with the real sun at the photographer's back). The sun is always above the
+      // horizon, so a vector pointing down is the reversed one.
+      _est.copy(d.position).normalize();
+      if (_est.y < 0) _est.negate();
+      _est.y = Math.max(_est.y, 0.12);
+      if (sunMode === 'auto') sunDir.copy(_est.normalize());
+    }
     sun.color.copy(d.color);
     sun.intensity = d.intensity * brightness;
     ambient.sh.copy(xrLight.lightProbe.sh);
     ambient.intensity = brightness;
     if (DEBUG && t - lastLightLog > 3000) {
       lastLightLog = t;
-      const c = xrLight.lightProbe.sh.coefficients[0];
-      log('light: sun', d.intensity.toFixed(2), `#${d.color.getHexString()}`, 'dir', sunDir.toArray().map((v) => v.toFixed(2)),
-        'ambient', [c.x, c.y, c.z].map((v) => v.toFixed(2)), 'env', !!xrLight.environment);
+      const sh = xrLight.lightProbe.sh.coefficients;
+      _shDir.set(lum(sh[3]), lum(sh[1]), lum(sh[2])).normalize();   // brightest part of the sky (three's SH order y, z, x)
+      const f = (v) => v.toArray().map((n) => n.toFixed(2)).join(',');
+      log(`light: sun ${d.intensity.toFixed(2)} #${d.color.getHexString()} raw ${f(_v.copy(d.position).normalize())}`,
+        `used ${f(sunDir)} sky ${f(_shDir)} ambient ${lum(sh[0]).toFixed(2)} env ${!!xrLight.environment}`);
     }
   } else {
+    if (sunMode === 'auto') sunDir.set(-0.35, 1, 0.55).normalize();
     sun.color.set(0xfff4e5);
     sun.intensity = 2.2 * brightness;
     hemi.intensity = 1.1 * brightness;
   }
+  if (sunMode !== 'auto') sunDir.copy(fixedSun);
   sky.intensity = 0.25 * brightness;
   scene.environmentIntensity = brightness;
   sun.position.copy(sign.position).addScaledVector(sunDir, 8);
@@ -487,7 +524,15 @@ function capture(frame) {
 
 async function finishPhoto(img) {
   const { width: w, height: h } = img;
-  const strip = stripOn ? Math.round(Math.max(w, h) * 0.06) : 0;
+  const unit = stripOn ? Math.round(Math.min(w, h) * 0.12) : 0;   // one line of the strip
+  const pad = unit * 0.45, size = Math.round(unit * 0.36), small = Math.round(size * 0.8);
+  const g0 = document.createElement('canvas').getContext('2d');
+  const width = (font, text) => { g0.font = font; return g0.measureText(text).width; };
+  const big = `800 ${size}px system-ui, sans-serif`, body = `600 ${small}px system-ui, sans-serif`;
+  const lead = width(big, 'THE MULE  ');
+  const left = lead + width(body, 'by ASININE SIGNS');
+  const twoLines = stripOn && pad + left + unit * 0.6 + width(body, CONTACT) + pad > w;   // portrait photos
+  const strip = stripOn ? Math.round(unit * (twoLines ? 1.65 : 1)) : 0;
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h + strip;
@@ -497,18 +542,21 @@ async function finishPhoto(img) {
     g.fillStyle = '#111';
     g.fillRect(0, h, w, strip);
     g.fillStyle = '#f28c28';
-    g.fillRect(0, h, Math.round(strip * 0.12), strip);
+    g.fillRect(0, h, Math.round(unit * 0.12), strip);
     g.textBaseline = 'middle';
-    const pad = strip * 0.45, size = Math.round(strip * 0.36);
-    g.font = `800 ${size}px system-ui, sans-serif`;
-    g.fillText('THE MULE', pad, h + strip / 2);
-    const lead = g.measureText('THE MULE  ').width;
+    const y1 = h + (twoLines ? unit * 0.55 : strip / 2);
+    g.font = big;
+    g.fillText('THE MULE', pad, y1);
     g.fillStyle = '#f2f2f2';
-    g.font = `600 ${Math.round(size * 0.8)}px system-ui, sans-serif`;
-    g.fillText(`by ASININE SIGNS`, pad + lead, h + strip / 2);
-    g.textAlign = 'right';
+    g.font = body;
+    g.fillText('by ASININE SIGNS', pad + lead, y1);
     g.fillStyle = '#bdbdbd';
-    g.fillText(CONTACT, w - pad, h + strip / 2);
+    if (twoLines) {
+      g.fillText(CONTACT, pad, h + unit * 1.15);
+    } else {
+      g.textAlign = 'right';
+      g.fillText(CONTACT, w - pad, y1);
+    }
   }
   const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.92));
   showResult(blob);
